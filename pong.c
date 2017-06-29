@@ -11,6 +11,7 @@
 #define DELAY 60000
 #define BRIGHT_WHITE -1
 #define WINNING_SCORE 10
+#define ESC 27
 
 typedef struct Paddle {
 
@@ -28,6 +29,8 @@ typedef struct Ball {
   int length;
   int x_coord;
   int y_coord;
+  int vertical_direction;
+  int horizontal_direction;
   
 } Ball;
 
@@ -38,6 +41,7 @@ static Paddle rightPaddle;
 void initialize_color_pairs();
 void start_game();
 void handle_resize(int ch);
+void adjust_speed();
 void reset();
 
 void move_leftPaddle(int ch);
@@ -46,14 +50,13 @@ void move_leftPaddle_up();
 int leftPaddle_hit_top();
 int leftPaddle_hit_bottom();
 
-void move_rightPaddle(int leftOrRight);
+void move_rightPaddle();
 void move_rightPaddle_down();
 void move_rightPaddle_up();
 int rightPaddle_hit_top();
 int rightPaddle_hit_bottom();
 
-int move_ball_leftOrRight(int leftOrRight);
-int move_ball_upOrDown(int upOrDown);
+void move_ball();
 void move_ball_left();
 void move_ball_right();
 void move_ball_up();
@@ -98,11 +101,12 @@ int main(int argc, char *argv[])
   keypad(stdscr, TRUE); // Keypad enabled
   initialize_color_pairs(); 
 
-  srand(time(NULL));
-  nodelay(stdscr, FALSE);
+  srand(time(NULL)); 
 
-  if(opening_screen() != 27)
+  if(opening_screen() != ESC){
+    reset();
     start_game();
+  }
 
   endwin(); // Restore normal terminal
   
@@ -119,38 +123,36 @@ void initialize_color_pairs()
   init_pair(4, COLOR_GREEN, COLOR_BLACK);
 }
 
+void reset()
+{
+  create_objects();
+  render_game();
+}
 
 void start_game()
 {
-  int leftOrRight = rand() % 2;
-  int upOrDown = (rand() % 2) + 2;
-  int ch = -1;
+  int ch = 0;
   
-  while(ch != 27 && winner() != 27){
-    
-    reset();
-  
-    while(ch != 27 && rightPaddle.score != 10 && leftPaddle.score != WINNING_SCORE){
+  while(ch != ESC){
       
       nodelay(stdscr, TRUE);
 
-      handle_resize(ch);
-      
       ch = getch();
+       
+      handle_resize(ch);
      
       move_leftPaddle(ch);
 
-      move_rightPaddle(leftOrRight);
+      move_rightPaddle();
 
-      leftOrRight = move_ball_leftOrRight(leftOrRight);
-
-      upOrDown = move_ball_upOrDown(upOrDown);   
+      move_ball();
 
       if(player_scored()){
 	leftPaddle.score++;
 	create_ball();
 	render_new_ball(0, 0);
 	render_score();
+	ch = winner();
       }
 
       if(computer_scored()){
@@ -158,15 +160,13 @@ void start_game()
 	create_ball();
 	render_new_ball(0, 0);
 	render_score();
+	ch = winner();
       }
       
-      usleep(DELAY - 1500*(leftPaddle.score + rightPaddle.score));
+      adjust_speed();
       
       refresh();
     }
-  }
-  
-
 }
 
 void handle_resize(int ch)
@@ -177,15 +177,14 @@ void handle_resize(int ch)
     render_game();
   }
 }
-void reset()
+
+void adjust_speed()
 {
-  create_objects();
-  render_game();
+  usleep(DELAY - 1500*(leftPaddle.score + rightPaddle.score));
 }
 
 void move_leftPaddle(int ch)
-{
-   
+{ 
   if(ch == KEY_UP){
          
     if(!leftPaddle_hit_top() && !ball_hit_above_leftPaddle())
@@ -226,13 +225,13 @@ int leftPaddle_hit_bottom()
   return FALSE;
 }
 
-void move_rightPaddle(int leftOrRight)
+void move_rightPaddle()
 {
   int accuracy = rand() % 100;
 
-  if(accuracy < 95 && leftOrRight == RIGHT){
+  if(accuracy < 95 && ball.vertical_direction == RIGHT){
     
-    if(ball.y_coord < rightPaddle.y_coord && !rightPaddle_hit_top() && !ball_hit_above_rightPaddle())
+    if(ball.y_coord < rightPaddle.y_coord - 1  && !rightPaddle_hit_top() && !ball_hit_above_rightPaddle())
       move_rightPaddle_up();
     
     if(ball.y_coord > (rightPaddle.y_coord + rightPaddle.length - 1) && !rightPaddle_hit_bottom() && !ball_hit_below_rightPaddle())
@@ -267,54 +266,49 @@ int rightPaddle_hit_bottom()
   return FALSE;
 }
 
-int move_ball_leftOrRight(int leftOrRight)
+void move_ball()
 {
-  if(leftOrRight == LEFT){
+  if(ball.vertical_direction == LEFT){
 	  
     if(!ball_hit_leftPaddle()){
       move_ball_left();
     }
     else{
-      return RIGHT;
+      ball.vertical_direction = RIGHT;
     }
     
   }
-  else if(leftOrRight == RIGHT){
+  else if(ball.vertical_direction == RIGHT){
 
     if(!ball_hit_rightPaddle()){
       move_ball_right();
     }
     else{
-      return LEFT;
+      ball.vertical_direction = LEFT;
     }
     
   } 
-  return leftOrRight;
-}
 
-int move_ball_upOrDown(int upOrDown)
-{ 
-  if(upOrDown == UP){
+  if(ball.horizontal_direction == UP){
       
     if(!ball_hit_top() && !ball_hit_below_leftPaddle() && !ball_hit_below_rightPaddle()){
       move_ball_up();
     }
     else{
-      return DOWN;
+      ball.horizontal_direction = DOWN;
     }
       
   }
-  else if(upOrDown == DOWN){
+  else if(ball.horizontal_direction == DOWN){
       
     if(!ball_hit_bottom() && !ball_hit_above_leftPaddle() && !ball_hit_above_rightPaddle()){     
       move_ball_down();
     }
     else{
-      return UP;
+      ball.horizontal_direction = UP;
     }
     
   }
-  return upOrDown;
 }
 
 void move_ball_up()
@@ -355,7 +349,7 @@ int ball_hit_bottom()
 
 int ball_hit_above_leftPaddle()
 {
-  int ballAboveLeftPaddle = ball.y_coord == leftPaddle.y_coord-1;
+  int ballAboveLeftPaddle = ball.y_coord == leftPaddle.y_coord - 1;
   int ballBehindLeftPaddle = ball.x_coord < (leftPaddle.x_coord + leftPaddle.length);
 
   if(ballBehindLeftPaddle && ballAboveLeftPaddle)
@@ -389,7 +383,7 @@ int ball_hit_leftPaddle()
 
 int ball_hit_above_rightPaddle()
 {
-  int ballAboveRightPaddle = ball.y_coord == rightPaddle.y_coord-1;
+  int ballAboveRightPaddle = ball.y_coord == rightPaddle.y_coord - 1;
   int ballBehindRightPaddle = ball.x_coord > (rightPaddle.x_coord - rightPaddle.length - 1);
 
   if(ballBehindRightPaddle && ballAboveRightPaddle)
@@ -421,9 +415,6 @@ int ball_hit_rightPaddle()
   return FALSE;
 }
 
-
-
-
 void create_objects()
 {
   create_leftPaddle();
@@ -446,7 +437,7 @@ void create_rightPaddle()
   rightPaddle.length = 2;
   rightPaddle.x_coord = COLS - 1;
   rightPaddle.y_coord = (LINES - rightPaddle.width) / 2;
-  rightPaddle.score = 0;
+  rightPaddle.score = 9;
 }
 
 void create_ball()
@@ -455,6 +446,8 @@ void create_ball()
   ball.length = 1;
   ball.x_coord = COLS / 2;
   ball.y_coord = rand() % LINES;
+  ball.vertical_direction = rand() % 2;
+  ball.horizontal_direction = rand() % 2 + 2;
 }
 
 
@@ -490,7 +483,6 @@ void render_new_ball(int y, int x)
   attron(COLOR_PAIR(3));
   mvaddch(ball.y_coord, ball.x_coord, ' ');
   attroff(COLOR_PAIR(3));
-  refresh();
 }
 
 void render_new_leftPaddle(int y, int x)
@@ -511,7 +503,6 @@ void render_new_leftPaddle(int y, int x)
       
     }
   }
-  refresh();
 }
 
 void render_new_rightPaddle(int y, int x)
@@ -615,7 +606,9 @@ int computer_scored()
 int winner()
 {
   int ch = -1;
+  
   if(leftPaddle.score == WINNING_SCORE){
+
     nodelay(stdscr, FALSE);
     
     attron(COLOR_PAIR(4));
@@ -632,10 +625,14 @@ int winner()
 
     leftPaddle.score = 0;
     rightPaddle.score = 0;
+ 
     ch = getch();
+    
+    reset();
   }
   
   if(rightPaddle.score == WINNING_SCORE){
+
     nodelay(stdscr, FALSE);
       
     attron(COLOR_PAIR(4));
@@ -652,17 +649,23 @@ int winner()
 
     leftPaddle.score = 0;
     rightPaddle.score = 0;
+    
     ch = getch();
+    
+    reset();
   }
+  
   return ch;
 }
 
 int opening_screen()
 {
   int ch;
+  
   bkgd(COLOR_PAIR(1));
-  attron(COLOR_PAIR(4));
+
   attron(A_BOLD);
+  attron(COLOR_PAIR(4));
   mvprintw((LINES/10) + 1, COLS / 2 - 15, "%s" , "@@@@ @" );
   mvprintw((LINES/10) + 2, COLS / 2 - 15, "%s" , "@@    @@" );
   mvprintw((LINES/10) + 3, COLS / 2 - 15, "%s" , "@@    @@" );
@@ -680,10 +683,11 @@ int opening_screen()
   mvprintw((LINES/10) + 20, COLS / 2 - 15, "%s" , "   Press Up Arrow to Move Up"  );
   mvprintw((LINES/10) + 21, COLS / 2 - 15, "%s" , " Press Down Arrow to Move Down"  );
   
-  attroff(A_BOLD);
   attroff(COLOR_PAIR(4));
-
+  attroff(A_BOLD);
+   
   ch = getch();
+  
   erase();
 
   return ch;
