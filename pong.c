@@ -437,7 +437,7 @@ void create_rightPaddle()
   rightPaddle.length = 2;
   rightPaddle.x_coord = COLS - 1;
   rightPaddle.y_coord = (LINES - rightPaddle.width) / 2;
-  rightPaddle.score = 9;
+  rightPaddle.score = 0;
 }
 
 void create_ball()
