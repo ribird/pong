@@ -9,6 +9,7 @@
 #define UP 2
 #define DOWN 3
 #define DELAY 60000
+#define BRIGHT_WHITE -1
 #define WINNING_SCORE 10
 #define ESC 27
 
