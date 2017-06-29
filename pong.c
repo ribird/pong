@@ -4,9 +4,6 @@
 #include <ncurses.h>
 #include <unistd.h>
 
-
-#define WIDTH getmaxy(stdscr)
-#define LENGTH getmaxx(stdscr)
 #define LEFT 0
 #define RIGHT 1
 #define UP 2
@@ -14,7 +11,6 @@
 #define DELAY 60000
 #define BRIGHT_WHITE -1
 #define WINNING_SCORE 10
-
 
 typedef struct Paddle {
 
@@ -38,11 +34,10 @@ typedef struct Ball {
 static Ball ball;
 static Paddle leftPaddle;
 static Paddle rightPaddle;
-static int player1score = 0;
-static int player2score = 0;
 
 void initialize_color_pairs();
 void start_game();
+void handle_resize(int ch);
 void reset();
 
 void move_leftPaddle(int ch);
@@ -50,7 +45,6 @@ void move_leftPaddle_down();
 void move_leftPaddle_up();
 int leftPaddle_hit_top();
 int leftPaddle_hit_bottom();
-
 
 void move_rightPaddle(int leftOrRight);
 void move_rightPaddle_down();
@@ -89,10 +83,11 @@ void cover_old_ball();
 void cover_old_leftPaddle();
 void cover_old_rightPaddle();
 
-void player_1_scored();
-void player_2_scored();
-void winner();
-void opening_screen();
+int player_scored();
+int computer_scored();
+int winner();
+int opening_screen();
+
 
 int main(int argc, char *argv[])
 {
@@ -105,7 +100,9 @@ int main(int argc, char *argv[])
 
   srand(time(NULL));
   nodelay(stdscr, FALSE);
-  reset();
+
+  if(opening_screen() != 27)
+    start_game();
 
   endwin(); // Restore normal terminal
   
@@ -127,45 +124,63 @@ void start_game()
 {
   int leftOrRight = rand() % 2;
   int upOrDown = (rand() % 2) + 2;
-  int ch;
+  int ch = -1;
   
-  while(ball.x_coord > 0 && ball.x_coord < (LENGTH - 1) && ch != 27){
-
-    nodelay(stdscr, TRUE);
+  while(ch != 27 && winner() != 27){
     
-    ch = getch();
-     
-    move_leftPaddle(ch);
-
-    move_rightPaddle(leftOrRight);
-
-    leftOrRight = move_ball_leftOrRight(leftOrRight);
-
-    upOrDown = move_ball_upOrDown(upOrDown);   
-
-    player_1_scored();
-    
-    player_2_scored();
-
-    usleep(DELAY);
-      
-    refresh();	
-  }
-
-  if(ch != 27){
-    winner();
     reset();
+  
+    while(ch != 27 && rightPaddle.score != 10 && leftPaddle.score != WINNING_SCORE){
+      
+      nodelay(stdscr, TRUE);
+
+      handle_resize(ch);
+      
+      ch = getch();
+     
+      move_leftPaddle(ch);
+
+      move_rightPaddle(leftOrRight);
+
+      leftOrRight = move_ball_leftOrRight(leftOrRight);
+
+      upOrDown = move_ball_upOrDown(upOrDown);   
+
+      if(player_scored()){
+	leftPaddle.score++;
+	create_ball();
+	render_new_ball(0, 0);
+	render_score();
+      }
+
+      if(computer_scored()){
+	rightPaddle.score++;
+	create_ball();
+	render_new_ball(0, 0);
+	render_score();
+      }
+      
+      usleep(DELAY - 1500*(leftPaddle.score + rightPaddle.score));
+      
+      refresh();
+    }
   }
+  
 
 }
 
+void handle_resize(int ch)
+{
+  if(ch == KEY_RESIZE){
+    create_rightPaddle();
+    leftPaddle.score = 0;
+    render_game();
+  }
+}
 void reset()
 {
-  nodelay(stdscr, FALSE);
   create_objects();
   render_game();
-  refresh();
-  start_game();
 }
 
 void move_leftPaddle(int ch)
@@ -205,7 +220,7 @@ int leftPaddle_hit_top()
 
 int leftPaddle_hit_bottom()
 {
-  if((leftPaddle.y_coord + leftPaddle.width - 1) == (WIDTH - 1))
+  if((leftPaddle.y_coord + leftPaddle.width - 1) == (LINES - 1))
     return TRUE;
 
   return FALSE;
@@ -246,7 +261,7 @@ int rightPaddle_hit_top()
 
 int rightPaddle_hit_bottom()
 {
-  if((rightPaddle.y_coord + rightPaddle.width - 1) == (WIDTH - 1))
+  if((rightPaddle.y_coord + rightPaddle.width - 1) == (LINES - 1))
     return TRUE;
 
   return FALSE;
@@ -332,7 +347,7 @@ int ball_hit_top()
 
 int ball_hit_bottom()
 {
-  if(ball.y_coord == (WIDTH - 1))
+  if(ball.y_coord == (LINES - 1))
     return TRUE;
   
   return FALSE;
@@ -421,35 +436,30 @@ void create_leftPaddle()
   leftPaddle.width = 5;
   leftPaddle.length = 2;
   leftPaddle.x_coord = 1;
-  leftPaddle.y_coord = (WIDTH - leftPaddle.width) / 2;
+  leftPaddle.y_coord = (LINES - leftPaddle.width) / 2;
+  leftPaddle.score = 0;
 }
 
 void create_rightPaddle()
 {
   rightPaddle.width = 5;
   rightPaddle.length = 2;
-  rightPaddle.x_coord = LENGTH - 1;
-  rightPaddle.y_coord = (WIDTH - rightPaddle.width) / 2;
+  rightPaddle.x_coord = COLS - 1;
+  rightPaddle.y_coord = (LINES - rightPaddle.width) / 2;
+  rightPaddle.score = 0;
 }
 
 void create_ball()
 {
   ball.width = 1;
   ball.length = 1;
-  ball.x_coord = LENGTH / 2;
-  ball.y_coord = rand() % WIDTH;
+  ball.x_coord = COLS / 2;
+  ball.y_coord = rand() % LINES;
 }
 
 
 void render_game()
 {
-  if(player1score + player2score == 0){
-    render_background();
-    opening_screen();
-    getch();
-    erase();
-  }
-  
   render_background();
   render_new_ball(0, 0);
   render_new_leftPaddle(0, 0);
@@ -458,25 +468,15 @@ void render_game()
 }
 
 void render_background()
-{ 
-  int i, j;
+{
+  int i;
+
+  bkgd(COLOR_PAIR(1));
   
-  for(i = 0; i < WIDTH; i++){
-
-    for(j = 0; j < LENGTH; j++){
-
-      if(j == LENGTH / 2){
+  for(i = 0; i < LINES; i++){
 	attron(COLOR_PAIR(2));
-	mvaddch(i, j, ' ');
+	mvaddch(i, COLS / 2, ' ');
 	attroff(COLOR_PAIR(2));
-      }
-      else{
-	attron(COLOR_PAIR(1));
-	mvaddch(i, j, ' ');
-	attroff(COLOR_PAIR(1));
-      }
-      
-    }
   }
 }
 
@@ -538,25 +538,25 @@ void render_score()
 {
   attron(COLOR_PAIR(4));
   attron(A_BOLD);
-  mvprintw(3, LENGTH / 4 , "%d", player1score);
+  mvprintw(3, COLS / 4 , "%d", leftPaddle.score);
   attroff(A_BOLD);
   attroff(COLOR_PAIR(4));
 
   attron(COLOR_PAIR(4));
   attron(A_BOLD);
-  mvprintw(3, (LENGTH - (LENGTH / 4)), "%d", player2score);
+  mvprintw(3, (COLS - (COLS / 4)), "%d", rightPaddle.score);
   attroff(A_BOLD);
   attroff(COLOR_PAIR(4));
 }
 
 void cover_old_ball(int y, int x)
 {
-  if(ball.x_coord == LENGTH / 2){
+  if(ball.x_coord == COLS / 2){
     attron(COLOR_PAIR(2));
     mvaddch(ball.y_coord, ball.x_coord, ' ');
     attroff(COLOR_PAIR(2));
   }
-  else if(ball.y_coord == 3 && ( ball.x_coord == (LENGTH / 4) || ball.x_coord == (LENGTH - (LENGTH / 4)))){
+  else if(ball.y_coord == 3 && ( ball.x_coord == (COLS / 4) || ball.x_coord == (COLS - (COLS / 4)))){
     render_score();
   }
   else{
@@ -596,82 +596,95 @@ void cover_old_rightPaddle()
   }
 }
 
-void player_1_scored()
+int player_scored()
 {
-  if(ball.x_coord == (LENGTH - 1))
-    player1score++;
+  if(ball.x_coord > (COLS - 1))
+    return TRUE;
+  
+  return FALSE;
 }
 
-void player_2_scored()
+int computer_scored()
 {
-  if(ball.x_coord == 0)
-    player2score++;
+  if(ball.x_coord < 0)
+    return TRUE;
+
+  return FALSE;
 }
 
-void winner()
+int winner()
 {
-  if(player1score == WINNING_SCORE){
-      nodelay(stdscr, FALSE);
+  int ch = -1;
+  if(leftPaddle.score == WINNING_SCORE){
+    nodelay(stdscr, FALSE);
     
     attron(COLOR_PAIR(4));
     attron(A_BOLD);
-    mvprintw(3, LENGTH / 4 , "%s", "WINNER!");
+    mvprintw(3, COLS / 4 , "%s", "WINNER!");
     attroff(A_BOLD);
     attroff(COLOR_PAIR(4));
 
     attron(COLOR_PAIR(4));
     attron(A_BOLD);
-    mvprintw(3, (LENGTH - (LENGTH / 4)), "%s", "LOSER!");
+    mvprintw(3, (COLS - (COLS / 4)), "%s", "LOSER!");
     attroff(A_BOLD);
     attroff(COLOR_PAIR(4));
 
-    player1score = 0;
-    player2score = 0;
+    leftPaddle.score = 0;
+    rightPaddle.score = 0;
+    ch = getch();
   }
   
-  if(player2score == WINNING_SCORE){
-      nodelay(stdscr, FALSE);
+  if(rightPaddle.score == WINNING_SCORE){
+    nodelay(stdscr, FALSE);
       
     attron(COLOR_PAIR(4));
     attron(A_BOLD);
-    mvprintw(3, LENGTH / 4 , "%s", "LOSER!");
+    mvprintw(3, COLS / 4 , "%s", "LOSER!");
     attroff(A_BOLD);
     attroff(COLOR_PAIR(4));
 
     attron(COLOR_PAIR(4));
     attron(A_BOLD);
-    mvprintw(3, (LENGTH - (LENGTH / 4)), "%s", "WINNER!");
+    mvprintw(3, (COLS - (COLS / 4)), "%s", "WINNER!");
     attroff(A_BOLD);
     attroff(COLOR_PAIR(4));
 
-    player1score = 0;
-    player2score = 0;
+    leftPaddle.score = 0;
+    rightPaddle.score = 0;
+    ch = getch();
   }
-
-  getch();
+  return ch;
 }
 
-void opening_screen()
+int opening_screen()
 {
+  int ch;
+  bkgd(COLOR_PAIR(1));
   attron(COLOR_PAIR(4));
   attron(A_BOLD);
-  mvprintw((WIDTH/10) + 1, LENGTH / 8, "%s" , "@@@@ @" );
-  mvprintw((WIDTH/10) + 2, LENGTH / 8, "%s" , "@@    @@" );
-  mvprintw((WIDTH/10) + 3, LENGTH / 8, "%s" , "@@    @@" );
-  mvprintw((WIDTH/10) + 4, LENGTH / 8, "%s" , "@@  @@   @@ @  @ @@@@   @@ @@" );
-  mvprintw((WIDTH/10) + 5, LENGTH / 8, "%s" , "@@     @@   @@ @@   @@ @@   @@"  );
-  mvprintw((WIDTH/10) + 6, LENGTH / 8, "%s" , "@@     @@   @@ @@   @@ @@   @@"  );
-  mvprintw((WIDTH/10) + 7, LENGTH / 8, "%s" , "@@     @@   @@ @@   @@ @@   @@"  );
-  mvprintw((WIDTH/10) + 8, LENGTH / 8, "%s" , "@@      @@ @@  @@   @@  @@ @@@"  );
-  mvprintw((WIDTH/10) + 9, LENGTH / 8, "%s" , "                            @@"  );
-  mvprintw((WIDTH/10) + 10, LENGTH / 8, "%s" , "                         @@ @"  );
+  mvprintw((LINES/10) + 1, COLS / 2 - 15, "%s" , "@@@@ @" );
+  mvprintw((LINES/10) + 2, COLS / 2 - 15, "%s" , "@@    @@" );
+  mvprintw((LINES/10) + 3, COLS / 2 - 15, "%s" , "@@    @@" );
+  mvprintw((LINES/10) + 4, COLS / 2 - 15, "%s" , "@@  @@   @@ @  @ @@@@   @@ @@" );
+  mvprintw((LINES/10) + 5, COLS / 2 - 15, "%s" , "@@     @@   @@ @@   @@ @@   @@"  );
+  mvprintw((LINES/10) + 6, COLS / 2 - 15, "%s" , "@@     @@   @@ @@   @@ @@   @@"  );
+  mvprintw((LINES/10) + 7, COLS / 2 - 15, "%s" , "@@     @@   @@ @@   @@ @@   @@"  );
+  mvprintw((LINES/10) + 8, COLS / 2 - 15, "%s" , "@@      @@ @@  @@   @@  @@ @@@"  );
+  mvprintw((LINES/10) + 9, COLS / 2 - 15, "%s" , "                            @@"  );
+  mvprintw((LINES/10) + 10, COLS / 2 - 15, "%s" , "                         @@ @"  );
 
-  mvprintw((WIDTH/10) + 15, LENGTH / 8, "%s" ,  "   PRESS ANY KEY TO START"  );
-  mvprintw((WIDTH/10) + 16, LENGTH / 8, "%s" ,  "      PReSs eSc To EXiT"  );
+  mvprintw((LINES/10) + 15, COLS / 2 - 15, "%s" ,  "   PRESS ANY KEY TO START"  );
+  mvprintw((LINES/10) + 16, COLS / 2 - 15, "%s" ,  "      PReSs eSc To EXiT"  );
 
-  mvprintw((WIDTH/10) + 20, LENGTH / 8, "%s" , "   Press Up Arrow to Move Up"  );
-  mvprintw((WIDTH/10) + 21, LENGTH / 8, "%s" , " Press Down Arrow to Move Down"  );
+  mvprintw((LINES/10) + 20, COLS / 2 - 15, "%s" , "   Press Up Arrow to Move Up"  );
+  mvprintw((LINES/10) + 21, COLS / 2 - 15, "%s" , " Press Down Arrow to Move Down"  );
   
   attroff(A_BOLD);
   attroff(COLOR_PAIR(4));
+
+  ch = getch();
+  erase();
+
+  return ch;
 }
